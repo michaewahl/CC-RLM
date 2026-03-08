@@ -1,0 +1,62 @@
+version: "3.9"
+
+services:
+
+  vllm:
+    image: vllm/vllm-openai:latest
+    runtime: nvidia
+    environment:
+      - HUGGING_FACE_HUB_TOKEN=${HUGGING_FACE_HUB_TOKEN}
+    command:
+      - "--model=${VLLM_MODEL:-MiniMaxAI/MiniMax-M2.5}"
+      - "--port=${VLLM_PORT:-8000}"
+      - "--host=0.0.0.0"
+      - "--gpu-memory-utilization=${VLLM_GPU_MEMORY_UTILIZATION:-0.9}"
+      - "--max-model-len=${VLLM_MAX_MODEL_LEN:-32768}"
+    ports:
+      - "${VLLM_PORT:-8000}:${VLLM_PORT:-8000}"
+    volumes:
+      - huggingface_cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  rlm:
+    build:
+      context: .
+      dockerfile: Dockerfile.rlm
+    environment:
+      - RLM_PORT=${RLM_PORT:-8081}
+      - RLM_TOKEN_BUDGET=${RLM_TOKEN_BUDGET:-8000}
+      - RLM_WORKER_POOL_SIZE=${RLM_WORKER_POOL_SIZE:-4}
+      - RLM_WALKER_TIMEOUT_MS=${RLM_WALKER_TIMEOUT_MS:-500}
+      - CCR_VLLM_URL=http://vllm:${VLLM_PORT:-8000}
+    ports:
+      - "${RLM_PORT:-8081}:${RLM_PORT:-8081}"
+    volumes:
+      # Mount the host filesystem so walkers can access repos without copying
+      - /:/host:ro
+    depends_on:
+      - vllm
+
+  ccr:
+    build:
+      context: .
+      dockerfile: Dockerfile.ccr
+    environment:
+      - CCR_PORT=${CCR_PORT:-8080}
+      - CCR_RLM_URL=http://rlm:${RLM_PORT:-8081}
+      - CCR_VLLM_URL=http://vllm:${VLLM_PORT:-8000}
+      - CCR_ANTHROPIC_FALLBACK_KEY=${CCR_ANTHROPIC_FALLBACK_KEY}
+      - CCR_FALLBACK_ENABLED=${CCR_FALLBACK_ENABLED:-true}
+    ports:
+      - "${CCR_PORT:-8080}:${CCR_PORT:-8080}"
+    depends_on:
+      - rlm
+
+volumes:
+  huggingface_cache:

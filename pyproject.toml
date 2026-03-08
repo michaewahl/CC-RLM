@@ -1,0 +1,25 @@
+[tool.poetry]
+name = "cc-rlm"
+package-mode = false
+version = "0.1.0"
+description = "Recursive Language Model Gateway — REPL-based context engine for Claude Code"
+authors = ["Mike Wahl"]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+fastapi = "^0.115"
+uvicorn = {extras = ["standard"], version = "^0.30"}
+httpx = "^0.27"
+pydantic = "^2.7"
+pydantic-settings = "^2.3"
+tiktoken = ">=0.6,<0.9"    # token counting (needs pre-built wheel)
+gitpython = "^3.1"         # git diff walker
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8"
+pytest-asyncio = "^0.23"
+ruff = "^0.4"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
