@@ -66,7 +66,7 @@ class RepoIndex:
     # Public API
     # ------------------------------------------------------------------
 
-    def get_relevant(self, active_file: str, n: int = 8) -> list[tuple[str, float]]:
+    def get_relevant(self, active_file: str, n: int = 8, task: str = "") -> list[tuple[str, float]]:
         """
         BFS from active_file through import graph.
         Returns list of (file_path, relevance_score) sorted by score desc.
@@ -78,13 +78,20 @@ class RepoIndex:
         visited: dict[str, float] = {}
         queue: deque[tuple[str, float]] = deque()
         queue.append((active_file, 1.5))
-        return self._bfs(queue, visited, n)
+        results = self._bfs(queue, visited, n)
+
+        # Task-keyword file matching: inject files whose stems match task keywords
+        if task:
+            results = self._boost_by_task_keywords(results, task, n)
+
+        return results
 
     def get_relevant_from_diff(
         self,
         changed_files: list[str],
         active_file: str,
         n: int = 10,
+        task: str = "",
     ) -> list[tuple[str, float]]:
         """
         Diff-first BFS: seed from files that actually changed, then active file.
@@ -108,9 +115,15 @@ class RepoIndex:
             queue.append((active_file, 1.5))
 
         if not queue:
-            return self.get_relevant(active_file, n)
+            return self.get_relevant(active_file, n, task=task)
 
-        return self._bfs(queue, visited, n)
+        results = self._bfs(queue, visited, n)
+
+        # Task-keyword file matching
+        if task:
+            results = self._boost_by_task_keywords(results, task, n)
+
+        return results
 
     def _bfs(
         self,
@@ -141,9 +154,59 @@ class RepoIndex:
                     queue.append((imp, next_score))
             for importer in neighbors.get("imported_by", []):
                 if importer not in visited:
-                    queue.append((importer, next_score * 0.7))
+                    queue.append((importer, next_score * 0.9))
 
         results = sorted(visited.items(), key=lambda x: -x[1])
+        return results[:n]
+
+    def _boost_by_task_keywords(
+        self,
+        results: list[tuple[str, float]],
+        task: str,
+        n: int,
+    ) -> list[tuple[str, float]]:
+        """
+        Inject files whose stem matches task keywords (e.g. task mentions 'store'
+        → rlm/store.py gets added). Scores below graph results so structural
+        edges still dominate.
+        """
+        import re
+        keywords = {
+            w.lower()
+            for w in re.findall(r'[a-zA-Z_][a-zA-Z0-9_]*', task)
+            if len(w) > 2
+        }
+        # Remove common stopwords
+        keywords -= {
+            'what', 'does', 'how', 'the', 'and', 'for', 'bug', 'fix',
+            'when', 'from', 'with', 'that', 'this', 'into', 'not', 'are',
+            'refactor', 'extract', 'rename', 'move', 'add', 'remove',
+            'file', 'files', 'module', 'function', 'class', 'method',
+            'use', 'used', 'using', 'still', 'has', 'get', 'set',
+        }
+        if not keywords:
+            return results
+
+        existing = {f for f, _ in results}
+        min_score = min((s for _, s in results), default=0.5) * 0.8
+
+        injected = []
+        for file_path in self.import_graph:
+            if file_path in existing:
+                continue
+            stem = Path(file_path).stem.lower()
+            # Match if any keyword appears in the file stem
+            if any(kw in stem or stem in kw for kw in keywords):
+                injected.append((file_path, min_score))
+
+        if injected:
+            log.info(
+                "Task-keyword match: injecting %s",
+                [Path(f).name for f, _ in injected],
+            )
+            results = results + injected
+            results.sort(key=lambda x: -x[1])
+
         return results[:n]
 
     def get_symbols(self, file_path: str) -> dict:
@@ -221,7 +284,7 @@ class RepoIndex:
         t0 = time.monotonic()
         updated = 0
         total = 0
-        skip_dirs = {".venv", "__pycache__", ".git", "node_modules", ".mypy_cache"}
+        skip_dirs = {".venv", "__pycache__", ".git", "node_modules", ".mypy_cache", "tests", "test"}
 
         for p in self._iter_files(extensions, skip_dirs):
             total += 1

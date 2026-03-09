@@ -128,17 +128,21 @@ async def build_context(req: ContextRequest) -> ContextResponse:
             # Ensure watcher is running (idempotent)
             watcher.start_watching(str(repo))
 
-        # Resolve diff changed_files to absolute paths
+        # Resolve diff changed_files to absolute paths (skip test/eval files)
+        _SKIP_PREFIXES = ("tests/", "test/", "docs/", ".claude/")
         diff_data = walker_results.get("diff", {})
         changed_rel = diff_data.get("changed_files", []) if isinstance(diff_data, dict) else []
-        changed_abs = [str(repo / f) for f in changed_rel if (repo / f).exists()]
+        changed_abs = [
+            str(repo / f) for f in changed_rel
+            if (repo / f).exists() and not any(f.startswith(p) for p in _SKIP_PREFIXES)
+        ]
 
         if changed_abs:
             log.info("Diff-first: seeding from %d changed file(s): %s",
                      len(changed_abs), [Path(f).name for f in changed_abs])
-            pre_ranked = idx.get_relevant_from_diff(changed_abs, active_file, n=10)
+            pre_ranked = idx.get_relevant_from_diff(changed_abs, active_file, n=10, task=req.task)
         else:
-            pre_ranked = idx.get_relevant(active_file, n=10)
+            pre_ranked = idx.get_relevant(active_file, n=10, task=req.task)
 
         # BM25 fallback when import graph is sparse
         if settings.bm25_enabled:

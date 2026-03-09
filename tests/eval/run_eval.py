@@ -65,6 +65,7 @@ class EvalResult:
     task: str
     active_file: str
     expected_files: list[str]
+    category: str = "exploration"
 
     # RLM (smart)
     rlm_tokens: int = 0
@@ -121,16 +122,17 @@ def run_rlm_case(case: dict, repo_path: Path) -> tuple[int, dict, float, str]:
 
 def format_table(results: list[EvalResult]) -> str:
     lines = []
-    header = f"{'Case':<28} {'RLM tok':>8} {'Naive tok':>10} {'Reduction':>10} {'Recall':>7} {'Latency':>9}"
+    header = f"{'Case':<28} {'Cat':>10} {'RLM tok':>8} {'Naive tok':>10} {'Reduction':>10} {'Recall':>7} {'Latency':>9}"
     lines.append(header)
     lines.append("-" * len(header))
 
     for r in results:
         if r.rlm_error:
-            lines.append(f"{r.case_id:<28} ERROR: {r.rlm_error}")
+            lines.append(f"{r.case_id:<28} {r.category:>10} ERROR: {r.rlm_error}")
             continue
         lines.append(
             f"{r.case_id:<28} "
+            f"{r.category:>10} "
             f"{r.rlm_tokens:>8,} "
             f"{r.naive_tokens:>10,} "
             f"{r.reduction_pct:>9.1f}% "
@@ -145,13 +147,34 @@ def format_table(results: list[EvalResult]) -> str:
         avg_latency = sum(r.rlm_latency_ms for r in good) / len(good)
         lines.append("-" * len(header))
         lines.append(
-            f"{'AVERAGE':<28} "
+            f"{'AVERAGE':<28} {'':>10} "
             f"{'':>8} "
             f"{'':>10} "
             f"{avg_reduction:>9.1f}% "
             f"{avg_recall:>6.0%}  "
             f"{avg_latency:>7.0f}ms"
         )
+
+        # Per-category breakdown
+        categories = sorted(set(r.category for r in good))
+        if len(categories) > 1:
+            lines.append("")
+            lines.append("=== By Category ===")
+            cat_header = f"{'Category':<16} {'Cases':>6} {'Avg Reduction':>14} {'Avg Recall':>11} {'Avg Latency':>12}"
+            lines.append(cat_header)
+            lines.append("-" * len(cat_header))
+            for cat in categories:
+                cat_results = [r for r in good if r.category == cat]
+                cat_reduction = sum(r.reduction_pct for r in cat_results) / len(cat_results)
+                cat_recall = sum(r.recall for r in cat_results) / len(cat_results)
+                cat_latency = sum(r.rlm_latency_ms for r in cat_results) / len(cat_results)
+                lines.append(
+                    f"{cat:<16} "
+                    f"{len(cat_results):>6} "
+                    f"{cat_reduction:>13.1f}% "
+                    f"{cat_recall:>10.0%}  "
+                    f"{cat_latency:>10.0f}ms"
+                )
 
     return "\n".join(lines)
 
@@ -178,6 +201,7 @@ def detail_section(results: list[EvalResult]) -> str:
 def main():
     parser = argparse.ArgumentParser(description="CC-RLM eval harness")
     parser.add_argument("--case", help="Run a single case by ID")
+    parser.add_argument("--category", help="Run only cases in a category (exploration, refactor, bugfix)")
     parser.add_argument("--json", action="store_true", help="Write JSON report")
     parser.add_argument(
         "--isolate", action="store_true", default=True,
@@ -194,6 +218,11 @@ def main():
         cases = [c for c in cases if c["id"] == args.case]
         if not cases:
             print(f"No case with id '{args.case}'")
+            sys.exit(1)
+    if args.category:
+        cases = [c for c in cases if c.get("category") == args.category]
+        if not cases:
+            print(f"No cases with category '{args.category}'")
             sys.exit(1)
 
     # Check RLM health
@@ -214,6 +243,11 @@ def main():
         print("Session isolation: OFF (shared session across cases — real multi-turn sim)\n")
 
     results = []
+    # Clear tool-reads file so it doesn't interfere with eval dedup
+    tool_reads_file = Path("/tmp/cc-rlm-tool-reads.json")
+    if tool_reads_file.exists():
+        tool_reads_file.unlink()
+
     for case in cases:
         if args.isolate:
             # Reset session so each case is scored independently
@@ -230,6 +264,7 @@ def main():
             task=case["task"],
             active_file=case.get("active_file", ""),
             expected_files=case.get("expected_files", []),
+            category=case.get("category", "exploration"),
             rlm_tokens=tokens,
             rlm_files_included=[s["file"] for s in pack.get("slices", [])],
             rlm_has_diff=pack.get("has_diff", False),

@@ -162,6 +162,10 @@ def assemble(
             (f, max(score, 1.5) if f == active_file else score)
             for f, score in relevant_files
         ]
+        # If active file wasn't in the ranked list at all, inject it at top
+        if active_file and active_file not in {f for f, _ in relevant_files}:
+            if Path(active_file).exists():
+                relevant_files.append((active_file, 2.0))
         relevant_files.sort(key=lambda x: -x[1])
 
     # Extensions worth slicing (code and config with structure)
@@ -178,7 +182,8 @@ def assemble(
             continue
 
         # Session deduplication: skip files Claude already has in context (unchanged)
-        if settings.session_dedup_enabled and session_tracker.already_seen(repo_path, filepath):
+        # Never dedup the active file — the user is staring at it right now
+        if filepath != active_file and settings.session_dedup_enabled and session_tracker.already_seen(repo_path, filepath):
             pack.deduped_files.append(filepath)
             continue
 

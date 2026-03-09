@@ -1,26 +1,86 @@
 [
   {
     "id": "classify-function",
+    "category": "exploration",
     "task": "What does the classify function do and how does it decide which route to take?",
     "active_file": "ccr/router.py",
     "expected_files": ["ccr/router.py", "ccr/config.py"]
   },
   {
     "id": "context-pack-assembly",
+    "category": "exploration",
     "task": "How does the context pack get assembled from walker results and how is the token budget enforced?",
     "active_file": "rlm/context_pack.py",
     "expected_files": ["rlm/context_pack.py", "rlm/main.py"]
   },
   {
     "id": "walker-dispatch",
+    "category": "exploration",
     "task": "How are walkers dispatched and what happens when one times out?",
     "active_file": "rlm/workspace.py",
     "expected_files": ["rlm/workspace.py", "rlm/main.py"]
   },
   {
     "id": "hook-state-file",
+    "category": "exploration",
     "task": "How does the UserPromptSubmit hook pass repo context to CCR without using headers?",
     "active_file": ".claude/hooks/inject_repo_context.py",
     "expected_files": [".claude/hooks/inject_repo_context.py", "ccr/router.py"]
+  },
+  {
+    "id": "bm25-architecture",
+    "category": "exploration",
+    "task": "How does the BM25 fallback work and when does it kick in versus the import graph?",
+    "active_file": "rlm/bm25.py",
+    "expected_files": ["rlm/bm25.py", "rlm/main.py", "rlm/config.py"]
+  },
+  {
+    "id": "refactor-cache-to-async",
+    "category": "refactor",
+    "task": "Refactor the walker cache to use async file I/O instead of synchronous reads for better concurrency",
+    "active_file": "rlm/cache.py",
+    "expected_files": ["rlm/cache.py", "rlm/workspace.py", "rlm/main.py"]
+  },
+  {
+    "id": "refactor-extract-ranking",
+    "category": "refactor",
+    "task": "Extract the file ranking logic from main.py into a separate ranker module so context assembly and ranking are decoupled",
+    "active_file": "rlm/main.py",
+    "expected_files": ["rlm/main.py", "rlm/repo_index.py", "rlm/bm25.py", "rlm/relevance_store.py"]
+  },
+  {
+    "id": "refactor-session-dedup",
+    "category": "refactor",
+    "task": "Rename session dedup functions and move the session tracker into context_pack.py to reduce cross-module coupling",
+    "active_file": "rlm/session.py",
+    "expected_files": ["rlm/session.py", "rlm/context_pack.py", "rlm/main.py"]
+  },
+  {
+    "id": "bugfix-stale-imported-by",
+    "category": "bugfix",
+    "task": "Bug: when a file removes an import, the old target's imported_by list still has the stale reference after refresh_file runs",
+    "active_file": "rlm/repo_index.py",
+    "expected_files": ["rlm/repo_index.py", "rlm/store.py"]
+  },
+  {
+    "id": "bugfix-diff-missing-new-files",
+    "category": "bugfix",
+    "task": "Bug: the diff walker misses newly added files that are staged but not yet committed, so they never appear in the context pack",
+    "active_file": "rlm/walkers/diff.py",
+    "expected_files": ["rlm/walkers/diff.py", "rlm/main.py", "rlm/context_pack.py"]
+  },
+  {
+    "id": "bugfix-relevance-division-by-zero",
+    "category": "bugfix",
+    "task": "Bug: relevance_store.get_multiplier crashes with division by zero when a file has total=0 citations",
+    "active_file": "rlm/relevance_store.py",
+    "expected_files": ["rlm/relevance_store.py", "rlm/store.py", "rlm/main.py"]
+  },
+  {
+    "id": "bugfix-watcher-symlink-loop",
+    "category": "bugfix",
+    "task": "Bug: the file watcher enters an infinite loop when the repo contains symlinks that point back to a parent directory",
+    "active_file": "rlm/watcher.py",
+    "expected_files": ["rlm/watcher.py", "rlm/repo_index.py"]
   }
 ]
