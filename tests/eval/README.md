@@ -19,6 +19,11 @@ poetry run uvicorn rlm.main:app --port 8081
 # Run all cases
 poetry run python tests/eval/run_eval.py
 
+# Filter by category
+poetry run python tests/eval/run_eval.py --category exploration
+poetry run python tests/eval/run_eval.py --category refactor
+poetry run python tests/eval/run_eval.py --category bugfix
+
 # Single case
 poetry run python tests/eval/run_eval.py --case classify-function
 
@@ -33,6 +38,7 @@ Edit `cases.json`. Each case:
 ```json
 {
   "id":             "short-kebab-id",
+  "category":       "exploration | refactor | bugfix",
   "task":           "What the dev would type in Claude Code",
   "active_file":    "path/relative/to/repo/root.py",
   "expected_files": ["files/that/should/appear/in/pack.py"]
