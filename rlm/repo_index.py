@@ -25,15 +25,16 @@ import ast
 import logging
 import os
 import time
-from collections import deque
+from collections import deque, OrderedDict
 from pathlib import Path
 
 from rlm import store
 
 log = logging.getLogger("rlm.repo_index")
 
-# {repo_path: RepoIndex}
-_indexes: dict[str, "RepoIndex"] = {}
+# HIGH-4: LRU-capped dict — evicts least-recently-used repo when limit is reached
+_MAX_INDEXES = 20
+_indexes: OrderedDict[str, "RepoIndex"] = OrderedDict()
 
 
 class RepoIndex:
@@ -392,9 +393,15 @@ class RepoIndex:
 # ------------------------------------------------------------------
 
 def get_or_create(repo_path: str) -> "RepoIndex":
-    if repo_path not in _indexes:
-        _indexes[repo_path] = RepoIndex(Path(repo_path))
-        log.info("RepoIndex created for: %s", repo_path)
+    if repo_path in _indexes:
+        _indexes.move_to_end(repo_path)  # mark as recently used
+        return _indexes[repo_path]
+    # HIGH-4: evict LRU entry when at capacity
+    if len(_indexes) >= _MAX_INDEXES:
+        evicted, _ = _indexes.popitem(last=False)
+        log.info("RepoIndex LRU evict: %s", evicted)
+    _indexes[repo_path] = RepoIndex(Path(repo_path))
+    log.info("RepoIndex created for: %s", repo_path)
     return _indexes[repo_path]
 
 

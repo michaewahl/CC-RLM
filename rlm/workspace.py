@@ -23,6 +23,30 @@ log = logging.getLogger("rlm.workspace")
 # Active workspaces: repo_path → resolved host path
 _workspaces: dict[str, Path] = {}
 
+# CRIT-1: hard allowlist of permitted walker modules — prevents arbitrary python -m execution
+_ALLOWED_WALKERS: frozenset[str] = frozenset({
+    "rlm.walkers.imports",
+    "rlm.walkers.symbols",
+    "rlm.walkers.diff",
+    "rlm.walkers.ts_imports",
+})
+
+
+def _check_allowed_root(resolved: Path) -> None:
+    """Raise ValueError if resolved path is outside RLM_ALLOWED_REPO_ROOTS (when configured)."""
+    roots = settings.allowed_repo_roots
+    if not roots:
+        return  # unconstrained — single-user local install
+    for root in roots:
+        try:
+            resolved.relative_to(root)
+            return  # within an allowed root
+        except ValueError:
+            continue
+    raise ValueError(
+        f"repo_path {resolved} is outside RLM_ALLOWED_REPO_ROOTS: {roots}"
+    )
+
 
 def resolve_repo_path(repo_path: str) -> Path:
     """
@@ -37,11 +61,15 @@ def resolve_repo_path(repo_path: str) -> Path:
     host_prefix = Path(settings.host_prefix)
     candidate = host_prefix / p.relative_to("/")
     if candidate.exists():
-        return candidate
+        resolved = candidate.resolve()
+        _check_allowed_root(resolved)
+        return resolved
 
     # Fallback: running locally, path is directly accessible
     if p.exists():
-        return p
+        resolved = p.resolve()
+        _check_allowed_root(resolved)
+        return resolved
 
     raise FileNotFoundError(f"Repo not found at {repo_path} (tried {candidate})")
 
@@ -69,6 +97,11 @@ async def run_walker(
     walker_module: dotted module path, e.g. "rlm.walkers.imports"
     kwargs: passed as --key=value CLI args to the walker
     """
+    # CRIT-1: reject any module not on the hard allowlist
+    if walker_module not in _ALLOWED_WALKERS:
+        log.error("Blocked disallowed walker module: %s", walker_module)
+        return {"error": f"walker not allowed: {walker_module}"}
+
     timeout = settings.walker_timeout_ms / 1000.0
     file_arg = str(kwargs.get("file", ""))
 

@@ -23,8 +23,9 @@ from fastapi import Request
 
 log = logging.getLogger("ccr.router")
 
-# Written by .claude/hooks/inject_repo_context.py before each Claude Code turn
-_STATE_FILE = Path("/tmp/cc-rlm-state.json")
+# Written by .claude/hooks/inject_repo_context.py before each Claude Code turn.
+# HIGH-3: use user-owned directory, not world-writable /tmp (prevents symlink attacks)
+_STATE_FILE = Path.home() / ".cc-rlm" / "state.json"
 
 _VALID_HINTS = {"fallback", "passthrough", "repo_task", ""}
 
@@ -46,11 +47,16 @@ def _read_state() -> dict:
 def get_repo_context(request: Request) -> tuple[str, str]:
     """
     Return (repo_path, active_file).
-    Prefers explicit headers (curl / tests), falls back to hook state file
+    Prefers explicit headers (curl / tests) when from localhost, falls back to hook state file
     (normal Claude Code usage — no headers needed).
     """
-    repo_path = request.headers.get("x-cc-repo-path", "")
-    active_file = request.headers.get("x-cc-active-file", "")
+    repo_path = ""
+    active_file = ""
+
+    # Only trust explicit headers from localhost (HIGH-1 fix)
+    if _is_localhost(request):
+        repo_path = request.headers.get("x-cc-repo-path", "")
+        active_file = request.headers.get("x-cc-active-file", "")
 
     if not repo_path:
         state = _read_state()
@@ -60,20 +66,29 @@ def get_repo_context(request: Request) -> tuple[str, str]:
     return repo_path, active_file
 
 
+_LOCALHOST_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+
+
+def _is_localhost(request: Request) -> bool:
+    return bool(request.client) and request.client.host in _LOCALHOST_HOSTS
+
+
 def get_route_hint(request: Request) -> str:
     """
     Return an explicit route override if one was set.
 
     Priority:
-      1. x-cc-route-hint header (for tests/curl)
+      1. x-cc-route-hint header — only honoured from localhost (HIGH-1 fix)
       2. route_hint in state file (set by UserPromptSubmit hook classify_prompt())
       3. "" — no override, fall through to default logic
     """
     hint = request.headers.get("x-cc-route-hint", "")
-    if hint in _VALID_HINTS:
-        if hint:
+    if hint in _VALID_HINTS and hint:
+        if not _is_localhost(request):
+            log.warning("Ignoring x-cc-route-hint from non-localhost client: %s", request.client)
+        else:
             log.info("Route override via header: %s", hint)
-        return hint
+            return hint
 
     state = _read_state()
     hint = state.get("route_hint", "")

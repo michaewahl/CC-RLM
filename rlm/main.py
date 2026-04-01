@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from rlm.config import settings
 from rlm.context_pack import assemble
@@ -36,6 +36,14 @@ log = logging.getLogger("rlm")
 _TS_EXTENSIONS = {".ts", ".tsx", ".js", ".jsx", ".mts", ".mjs"}
 
 
+async def _session_gc_loop() -> None:
+    """HIGH-4: periodically evict expired sessions so _sessions dict doesn't grow unboundedly."""
+    from rlm import session as session_tracker
+    while True:
+        await asyncio.sleep(300)  # every 5 minutes
+        session_tracker._gc()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Open persistent store first — RepoIndex + relevance_store both need it
@@ -45,7 +53,9 @@ async def lifespan(app: FastAPI):
     log.info("  cache=%s  session_dedup=%s  repo_index=%s",
              settings.cache_enabled, settings.session_dedup_enabled, settings.repo_index_enabled)
     log.info("  store=%s", sqlite_store.db_stats())
+    gc_task = asyncio.create_task(_session_gc_loop())
     yield
+    gc_task.cancel()
     watcher.stop_all()
     sqlite_store.close_db()
     log.info("Walker cache stats on exit: %s", walker_cache.stats())
@@ -55,9 +65,9 @@ app = FastAPI(title="RLM Gateway", lifespan=lifespan)
 
 
 class ContextRequest(BaseModel):
-    task: str
+    task: str = Field(max_length=4_000)
     active_file: str = ""
-    repo_path: str
+    repo_path: str = Field(max_length=1_000)
 
 
 class ContextResponse(BaseModel):
@@ -67,9 +77,9 @@ class ContextResponse(BaseModel):
 
 
 class FeedbackRequest(BaseModel):
-    repo_path: str
-    files_in_pack: list[str]
-    response_text: str
+    repo_path: str = Field(max_length=1_000)
+    files_in_pack: list[str] = Field(default=[], max_length=200)
+    response_text: str = Field(max_length=50_000)
 
 
 @app.post("/context", response_model=ContextResponse)
@@ -82,6 +92,15 @@ async def build_context(req: ContextRequest) -> ContextResponse:
         raise HTTPException(status_code=400, detail=str(exc))
 
     active_file = req.active_file
+    # CRIT-2: ensure active_file is within the resolved repo root (path traversal guard)
+    if active_file:
+        try:
+            Path(active_file).resolve().relative_to(repo)
+        except ValueError:
+            raise HTTPException(
+                status_code=400,
+                detail=f"active_file must be within repo_path: {active_file}",
+            )
     log.info("Building context pack for: %s", Path(active_file).name if active_file else "(no active file)")
 
     # ------------------------------------------------------------------
@@ -227,10 +246,10 @@ async def reset_session(repo_path: str | None = None):
     if repo_path:
         session_tracker.invalidate(repo_path)
     else:
-        session_tracker._sessions.clear()
+        session_tracker.clear_all()
     return {"ok": True}
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("rlm.main:app", host="0.0.0.0", port=settings.port, reload=True)
+    uvicorn.run("rlm.main:app", host="127.0.0.1", port=settings.port, reload=True)

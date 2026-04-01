@@ -7,6 +7,7 @@ then streams the response back from vLLM.
 Falls back to Anthropic API when no repo context is available.
 """
 
+import asyncio
 import json
 import logging
 import time
@@ -70,6 +71,32 @@ async def proxy(request: Request, path: str):
     return await _stream_vllm(request, enriched_body, repo_path, files_in_pack, pack_tokens, naive_tokens, start_time)
 
 
+_NAIVE_SKIP_DIRS = {"__pycache__", ".venv", "node_modules", "tests", ".git"}
+_NAIVE_SOURCE_EXTS = {".py", ".ts", ".tsx", ".js", ".jsx"}
+_NAIVE_MAX_FILES = 500  # hard cap — prevents blocking on huge repos or /
+
+
+def _count_naive_tokens(repo_path: str) -> int:
+    """Synchronous file scan — always call via run_in_executor."""
+    total = 0
+    count = 0
+    root = Path(repo_path)
+    root_parts = len(root.parts)
+    for p in root.rglob("*"):
+        if count >= _NAIVE_MAX_FILES:
+            break
+        if not p.is_file() or p.suffix not in _NAIVE_SOURCE_EXTS:
+            continue
+        if any(part in _NAIVE_SKIP_DIRS or part.startswith(".") for part in p.parts[root_parts:]):
+            continue
+        count += 1
+        try:
+            total += len(p.read_text(errors="ignore")) // 4
+        except Exception:
+            pass
+    return total
+
+
 async def _enrich(body: dict, task: str, active_file: str, repo_path: str) -> tuple[dict, list[str], int, int]:
     """Call RLM Gateway to get context pack and inject it as system message.
     Returns (enriched_body, files_in_pack, pack_tokens, naive_tokens)."""
@@ -88,19 +115,12 @@ async def _enrich(body: dict, task: str, active_file: str, repo_path: str) -> tu
         files_in_pack = pack.get("pack", {}).get("files_in_pack", [])
         pack_tokens = pack.get("token_count", 0)
 
-        # Naive baseline: total tokens if all repo source files were included in full
-        _SKIP_DIRS = {"__pycache__", ".venv", "node_modules", "tests", ".git"}
-        _SOURCE_EXTS = {".py", ".ts", ".tsx", ".js", ".jsx"}
+        # Naive baseline: total tokens if all repo source files were included in full.
+        # Run in executor — rglob + read_text must not block the async event loop.
         if repo_path:
-            for p in Path(repo_path).rglob("*"):
-                if not p.is_file() or p.suffix not in _SOURCE_EXTS:
-                    continue
-                if any(part in _SKIP_DIRS or part.startswith(".") for part in p.parts[len(Path(repo_path).parts):]):
-                    continue
-                try:
-                    naive_tokens += len(p.read_text(errors="ignore")) // 4
-                except Exception:
-                    pass
+            naive_tokens = await asyncio.get_event_loop().run_in_executor(
+                None, _count_naive_tokens, repo_path
+            )
     except Exception as exc:
         log.warning("RLM enrichment failed (%s), continuing without context", exc)
         system_preamble = ""
@@ -201,7 +221,14 @@ async def _stream_vllm(
 
 
 async def _forward(request: Request, path: str, body: bytes, base_url: str):
-    target = f"{base_url}/{path}"
+    # CRIT-3: sanitize path before appending to base_url to prevent SSRF.
+    # Reject path traversal sequences, authority-injection characters, and embedded schemes.
+    safe_path = path.lstrip("/")
+    if ".." in safe_path or "@" in safe_path or "://" in safe_path:
+        from fastapi.responses import JSONResponse
+        log.warning("Blocked suspicious forwarded path: %s", path)
+        return JSONResponse({"error": "invalid path"}, status_code=400)
+    target = f"{base_url.rstrip('/')}/{safe_path}"
     headers = {
         k: v for k, v in request.headers.items()
         if k.lower() not in ("host", "content-length")

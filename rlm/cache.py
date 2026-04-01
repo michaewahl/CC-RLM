@@ -14,6 +14,9 @@ from pathlib import Path
 
 log = logging.getLogger("rlm.cache")
 
+# HIGH-4: cap cache size to prevent unbounded memory growth
+_MAX_CACHE_SIZE = 1_000
+
 # {cache_key: {"data": dict, "mtime": float, "ts": float}}
 _cache: dict[str, dict] = {}
 
@@ -62,6 +65,10 @@ def set(walker_module: str, repo_path: str, file_path: str, data: dict) -> None:
         return  # Can't determine mtime — don't cache
 
     k = _key(walker_module, repo_path, file_path)
+    # HIGH-4: evict oldest entry when at capacity (insertion-order FIFO)
+    if len(_cache) >= _MAX_CACHE_SIZE and k not in _cache:
+        oldest = next(iter(_cache))
+        del _cache[oldest]
     _cache[k] = {"data": data, "mtime": mtime, "ts": time.monotonic()}
 
 

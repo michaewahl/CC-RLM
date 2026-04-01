@@ -29,9 +29,12 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
-STATE_FILE = "/tmp/cc-rlm-state.json"
+# HIGH-3: user-owned directory instead of world-writable /tmp (prevents symlink attacks)
+_STATE_DIR = Path.home() / ".cc-rlm"
+STATE_FILE = str(_STATE_DIR / "state.json")
 
 # Explicit route prefix patterns
 _PREFIXES = {
@@ -164,7 +167,8 @@ def main():
 
     # Clear tool-reads from previous turn — each new prompt starts fresh
     try:
-        Path("/tmp/cc-rlm-tool-reads.json").write_text("[]")
+        _STATE_DIR.mkdir(parents=True, exist_ok=True)
+        (_STATE_DIR / "tool-reads.json").write_text("[]")
     except Exception:
         pass
 
@@ -190,7 +194,14 @@ def main():
     }
 
     try:
-        Path(STATE_FILE).write_text(json.dumps(state))
+        _STATE_DIR.mkdir(parents=True, exist_ok=True)
+        # HIGH-3: atomic write via temp file + rename (prevents partial-read and symlink attacks)
+        with tempfile.NamedTemporaryFile(
+            mode="w", dir=_STATE_DIR, prefix=".state-", suffix=".tmp", delete=False
+        ) as tf:
+            json.dump(state, tf)
+            tmp_path = tf.name
+        Path(tmp_path).rename(STATE_FILE)
     except Exception:
         pass
 

@@ -1,4 +1,16 @@
 {
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:www.mintlify.com)",
+      "WebFetch(domain:mintlify.com)",
+      "Bash(curl -s -N http://localhost:8080/v1/chat/completions -H \"Content-Type: application/json\" -H \"x-cc-repo-path: /Users/mikewahl/CC-RLM\" -H \"x-cc-active-file: ccr/router.py\" -H \"x-cc-route-hint: REPO_TASK\" -d '{\"\"\"\"model\"\"\"\":\"\"\"\"qwen2.5-coder:7b\"\"\"\",\"\"\"\"messages\"\"\"\":[{\"\"\"\"role\"\"\"\":\"\"\"\"user\"\"\"\",\"\"\"\"content\"\"\"\":\"\"\"\"how does the router classify prompts\"\"\"\"}],\"\"\"\"stream\"\"\"\":true}')",
+      "Bash(curl -s http://localhost:8081/context -X POST -H 'Content-Type: application/json' -d '{\"\"\"\"repo_path\"\"\"\":\"\"\"\"/Users/mikewahl/CC-RLM\"\"\"\",\"\"\"\"task\"\"\"\":\"\"\"\"how does the router classify prompts\"\"\"\",\"\"\"\"active_file\"\"\"\":\"\"\"\"ccr/router.py\"\"\"\"}')",
+      "Bash(git add:*)",
+      "Bash(poetry run:*)",
+      "Bash(disown)",
+      "Bash(curl -s -N http://localhost:8080/v1/chat/completions -H 'Content-Type: application/json' -H 'x-cc-repo-path: /Users/mikewahl/CC-RLM' -H 'x-cc-active-file: rlm/session.py' -H 'x-cc-route-hint: REPO_TASK' -d '{\"model\":\"qwen2.5-coder:7b\",\"messages\":[{\"role\":\"user\",\"content\":\"how does session dedup work\"}],\"stream\":true}')"
+    ]
+  },
   "hooks": {
     "UserPromptSubmit": [
       {

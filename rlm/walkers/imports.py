@@ -51,11 +51,15 @@ def module_to_file(module: str, repo: Path) -> str | None:
     return None
 
 
-def find_importers(target_file: Path, repo: Path) -> list[str]:
+def find_importers(target_file: Path, repo: Path, max_files: int = 5_000) -> list[str]:
     """Find all Python files in the repo that import the target file."""
     target_stem = target_file.stem
     importers = []
+    scanned = 0
     for py_file in repo.rglob("*.py"):
+        if scanned >= max_files:
+            break
+        scanned += 1
         if py_file == target_file:
             continue
         for mod in get_imports(py_file):

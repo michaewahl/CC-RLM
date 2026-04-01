@@ -17,6 +17,11 @@ class RLMSettings(BaseSettings):
     # Persistent SQLite store path (survives server restarts)
     store_path: str = str(Path.home() / ".cc-rlm" / "store.db")
 
+    # Security: allowlist of repo root prefixes that RLM is permitted to read.
+    # Empty list = allow any path (single-user local installs).
+    # Set to e.g. ["/Users/me/projects", "/home/me/src"] on shared machines.
+    allowed_repo_roots: list[str] = []
+
     # Feature flags
     cache_enabled: bool = True          # mtime-invalidated walker result cache
     session_dedup_enabled: bool = True  # skip unchanged files across turns

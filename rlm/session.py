@@ -27,8 +27,9 @@ log = logging.getLogger("rlm.session")
 # {session_id: {file_path: {"mtime": float, "ts": float}}}
 _sessions: dict[str, dict[str, dict]] = {}
 
-# Written by .claude/hooks/track_tool_reads.py, cleared by inject_repo_context.py
-_TOOL_READS_FILE = Path("/tmp/cc-rlm-tool-reads.json")
+# Written by .claude/hooks/track_tool_reads.py, cleared by inject_repo_context.py.
+# HIGH-3: use user-owned directory, not world-writable /tmp (prevents symlink attacks)
+_TOOL_READS_FILE = Path.home() / ".cc-rlm" / "tool-reads.json"
 
 
 def _tool_reads() -> set[str]:
@@ -114,6 +115,11 @@ def invalidate(repo_path: str, file_path: str | None = None) -> None:
         _sessions[sid] = {}
     else:
         _sessions[sid].pop(file_path, None)
+
+
+def clear_all() -> None:
+    """Clear all sessions (used by DELETE /session with no repo_path)."""
+    _sessions.clear()
 
 
 def stats(repo_path: str) -> dict:
