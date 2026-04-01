@@ -44,9 +44,9 @@ ollama pull qwen2.5-coder:7b
 # Install deps
 cd CC-RLM && poetry install
 
-# Start services
-poetry run uvicorn rlm.main:app --port 8081 &
-poetry run uvicorn ccr.main:app --port 8080 &
+# Start services (bound to localhost only)
+poetry run uvicorn rlm.main:app --port 8081 --host 127.0.0.1 &
+poetry run uvicorn ccr.main:app --port 8080 --host 127.0.0.1 &
 
 # Point Claude Code at CCR
 export ANTHROPIC_BASE_URL=http://localhost:8080
@@ -105,6 +105,16 @@ RLM_TOKEN_BUDGET=8000
 RLM_WALKER_TIMEOUT_MS=500
 RLM_STORE_PATH=~/.cc-rlm/store.db
 ```
+
+## Security
+
+Both services bind to `127.0.0.1` by default — not reachable from the network. For shared/multi-user machines, restrict which repos RLM can read:
+
+```env
+RLM_ALLOWED_REPO_ROOTS=/Users/me/projects,/home/me/src
+```
+
+See [docs/adr/](docs/adr/) for architecture decisions.
 
 ## License
 
