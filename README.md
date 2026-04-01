@@ -72,6 +72,16 @@ Claude Code → CCR (proxy, port 8080) → RLM Gateway (port 8081) → Ollama (p
 
 **CCR** handles routing, auth, and Anthropic fallback. **RLM** handles context — walkers, index, slicing, assembly. Either can be replaced independently.
 
+## Live savings in the terminal
+
+Every response starts with a real-time annotation showing exactly what CC-RLM saved:
+
+```
+[CC-RLM ▸ 2.3K tokens packed · 90% saved vs naive · 216ms]
+```
+
+No benchmarks needed — the proxy reports its own work on every turn.
+
 ## What makes it different
 
 - **Structure over semantics** — import graphs and call chains, not embeddings
