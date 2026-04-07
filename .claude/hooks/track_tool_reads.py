@@ -9,7 +9,7 @@ so the RLM session deduplicator knows not to re-inject them.
 This closes the gap where Claude reads a file via the Read tool, then RLM
 injects the same file again in the next turn's context pack — doubling the tokens.
 
-State file: /tmp/cc-rlm-tool-reads.json
+State file: ~/.cc-rlm/tool-reads.json
   ["abs/path/to/file.py", ...]
 
 Cleared by inject_repo_context.py at the start of each new user turn.
@@ -19,7 +19,7 @@ import json
 import sys
 from pathlib import Path
 
-TOOL_READS_FILE = Path("/tmp/cc-rlm-tool-reads.json")
+TOOL_READS_FILE = Path.home() / ".cc-rlm" / "tool-reads.json"
 
 
 def main():

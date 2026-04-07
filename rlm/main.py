@@ -93,9 +93,19 @@ async def build_context(req: ContextRequest) -> ContextResponse:
 
     active_file = req.active_file
     # CRIT-2: ensure active_file is within the resolved repo root (path traversal guard)
+    # Use lstat() to detect symlinks before resolve() — a symlink inside the repo
+    # pointing outside would otherwise pass the relative_to() check.
     if active_file:
+        af_path = Path(active_file)
         try:
-            Path(active_file).resolve().relative_to(repo)
+            if af_path.exists() and af_path.lstat().st_mode & 0o170000 == 0o120000:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"active_file must not be a symlink: {active_file}",
+                )
+            af_path.resolve().relative_to(repo)
+        except HTTPException:
+            raise
         except ValueError:
             raise HTTPException(
                 status_code=400,
