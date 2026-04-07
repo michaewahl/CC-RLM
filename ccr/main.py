@@ -19,6 +19,7 @@ from fastapi.responses import StreamingResponse
 
 from ccr.config import settings
 from ccr.router import Route, classify, extract_task_text, get_repo_context, _read_state
+from ccr.skill_pruner import prune_tools
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("ccr")
@@ -67,8 +68,8 @@ async def proxy(request: Request, path: str):
     log.info("  task preview: %s", task[:120])
 
     start_time = time.monotonic()
-    enriched_body, files_in_pack, pack_tokens, naive_tokens = await _enrich(body, task, active_file, repo_path)
-    return await _stream_vllm(request, enriched_body, repo_path, files_in_pack, pack_tokens, naive_tokens, start_time)
+    enriched_body, files_in_pack, pack_tokens, naive_tokens, pruned_tools, original_tools = await _enrich(body, task, active_file, repo_path)
+    return await _stream_vllm(request, enriched_body, repo_path, files_in_pack, pack_tokens, naive_tokens, start_time, pruned_tools, original_tools)
 
 
 _NAIVE_SKIP_DIRS = {"__pycache__", ".venv", "node_modules", "tests", ".git"}
@@ -97,9 +98,9 @@ def _count_naive_tokens(repo_path: str) -> int:
     return total
 
 
-async def _enrich(body: dict, task: str, active_file: str, repo_path: str) -> tuple[dict, list[str], int, int]:
+async def _enrich(body: dict, task: str, active_file: str, repo_path: str) -> tuple[dict, list[str], int, int, int, int]:
     """Call RLM Gateway to get context pack and inject it as system message.
-    Returns (enriched_body, files_in_pack, pack_tokens, naive_tokens)."""
+    Returns (enriched_body, files_in_pack, pack_tokens, naive_tokens, pruned_tools, original_tools)."""
     files_in_pack: list[str] = []
     pack_tokens = 0
     naive_tokens = 0
@@ -126,7 +127,9 @@ async def _enrich(body: dict, task: str, active_file: str, repo_path: str) -> tu
         system_preamble = ""
 
     if not system_preamble:
-        return body, files_in_pack, pack_tokens, naive_tokens
+        # Still run pruner even when enrichment is skipped
+        pruned_count, original_count = _apply_pruner(body, task)
+        return body, files_in_pack, pack_tokens, naive_tokens, pruned_count, original_count
 
     messages = body.get("messages", [])
     if messages and messages[0].get("role") == "system":
@@ -134,7 +137,28 @@ async def _enrich(body: dict, task: str, active_file: str, repo_path: str) -> tu
     else:
         messages = [{"role": "system", "content": system_preamble}] + messages
 
-    return {**body, "messages": messages}, files_in_pack, pack_tokens, naive_tokens
+    enriched = {**body, "messages": messages}
+    pruned_count, original_count = _apply_pruner(enriched, task)
+    return enriched, files_in_pack, pack_tokens, naive_tokens, pruned_count, original_count
+
+
+def _apply_pruner(body: dict, task: str) -> tuple[int, int]:
+    """Prune tools in-place. Returns (pruned_count, original_count)."""
+    original = body.get("tools")
+    if not original or not settings.skill_pruner_enabled:
+        return 0, 0
+    original_count = len(original)
+    pruned = prune_tools(original, task, settings.skill_pruner_max_tools)
+    body["tools"] = pruned
+    pruned_count = len(pruned)
+    # Clear tool_choice if it names a tool no longer in the pruned list
+    tool_choice = body.get("tool_choice")
+    if isinstance(tool_choice, dict):
+        chosen_name = tool_choice.get("function", {}).get("name") or tool_choice.get("name")
+        pruned_names = {t.get("name") for t in pruned}
+        if chosen_name and chosen_name not in pruned_names:
+            body.pop("tool_choice", None)
+    return pruned_count, original_count
 
 
 async def _stream_vllm(
@@ -145,6 +169,8 @@ async def _stream_vllm(
     pack_tokens: int = 0,
     naive_tokens: int = 0,
     start_time: float | None = None,
+    pruned_tools: int = 0,
+    original_tools: int = 0,
 ):
     """
     Stream response from vLLM.
@@ -164,9 +190,11 @@ async def _stream_vllm(
         if pack_tokens > 0 and naive_tokens > pack_tokens:
             latency_ms = round((time.monotonic() - start_time) * 1000) if start_time else 0
             savings_pct = round((1 - pack_tokens / naive_tokens) * 100)
+            tools_part = f" · {pruned_tools}/{original_tools} tools" if original_tools > 0 else ""
             annotation = (
                 f"[CC-RLM ▸ {pack_tokens / 1000:.1f}K tokens packed"
                 f" · {savings_pct}% saved vs naive"
+                f"{tools_part}"
                 f" · {latency_ms}ms]\n\n"
             )
             annotation_event = {

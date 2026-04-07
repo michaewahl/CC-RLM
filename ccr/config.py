@@ -15,6 +15,10 @@ class CCRSettings(BaseSettings):
     # Leave empty to pass the model field through unchanged (vLLM, Anthropic).
     model_override: str = "qwen2.5-coder:7b"
 
+    # Skill Pruner: trim tool schema array before sending to the local model
+    skill_pruner_enabled: bool = True
+    skill_pruner_max_tools: int = 6
+
     # Header Claude Code uses to advertise the current file
     active_file_header: str = "x-cc-active-file"
     repo_path_header: str = "x-cc-repo-path"

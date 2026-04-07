@@ -20,6 +20,7 @@ BUDGET_FILE = PROJECT_ROOT / "rlm" / "context_pack.py"
 # Paths outside PROJECT_ROOT that are explicitly allowed
 ALLOWED_EXTERNAL = [
     Path("/Users/mikewahl/.claude/projects/-Users-mikewahl-CC-RLM/memory"),
+    Path("/Users/mikewahl/.claude/plans"),
 ]
 
 
