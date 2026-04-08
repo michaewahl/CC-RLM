@@ -7,3 +7,10 @@ dist/
 *.egg-info/
 post.md
 .contextiq/
+
+# eval runtime data — generated locally, not versioned
+eval/watchdog.db
+eval/watchdog.db-shm
+eval/watchdog.db-wal
+eval/dashboard.jsonl
+eval/*.png
