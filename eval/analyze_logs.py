@@ -57,29 +57,31 @@ def load_watchdog_db() -> list[dict]:
         return []
     try:
         conn = sqlite3.connect(str(DB_PATH))
-        conn.execute("PRAGMA journal_mode=WAL")
-        cur = conn.execute("""
-            SELECT
-                session_id,
-                SUM(CASE WHEN tool_name IN ('Read','Glob','Grep') THEN 1 ELSE 0 END) as reads,
-                SUM(CASE WHEN tool_name IN ('Write','Edit','MultiEdit') THEN 1 ELSE 0 END) as writes,
-                MIN(ts) as first_ts
-            FROM tool_calls
-            GROUP BY session_id
-            ORDER BY first_ts DESC
-        """)
-        rows = [
-            {
-                "session_id": r[0],
-                "reads": r[1],
-                "writes": r[2],
-                "first_ts": r[3],
-                "source": "watchdog.db",
-            }
-            for r in cur.fetchall()
-        ]
-        conn.close()
-        return rows
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            cur = conn.execute("""
+                SELECT
+                    session_id,
+                    SUM(CASE WHEN tool_name IN ('Read','Glob','Grep') THEN 1 ELSE 0 END) as reads,
+                    SUM(CASE WHEN tool_name IN ('Write','Edit','MultiEdit') THEN 1 ELSE 0 END) as writes,
+                    MIN(ts) as first_ts
+                FROM tool_calls
+                GROUP BY session_id
+                ORDER BY first_ts DESC
+            """)
+            rows = [
+                {
+                    "session_id": r[0],
+                    "reads": r[1],
+                    "writes": r[2],
+                    "first_ts": r[3],
+                    "source": "watchdog.db",
+                }
+                for r in cur.fetchall()
+            ]
+            return rows
+        finally:
+            conn.close()
     except Exception as e:
         print(f"  [watchdog.db error: {e}]")
         return []
@@ -94,12 +96,14 @@ def load_session_decay(session_id: str, buckets: int = 3) -> list[dict] | None:
         return None
     try:
         conn = sqlite3.connect(str(DB_PATH))
-        cur = conn.execute(
-            "SELECT tool_name, ts FROM tool_calls WHERE session_id = ? ORDER BY ts",
-            (session_id,),
-        )
-        rows = cur.fetchall()
-        conn.close()
+        try:
+            cur = conn.execute(
+                "SELECT tool_name, ts FROM tool_calls WHERE session_id = ? ORDER BY ts",
+                (session_id,),
+            )
+            rows = cur.fetchall()
+        finally:
+            conn.close()
     except Exception:
         return None
 

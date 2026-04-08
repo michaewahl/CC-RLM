@@ -77,13 +77,15 @@ def main() -> None:
 
     try:
         conn = sqlite3.connect(str(DB_PATH))
-        init_db(conn)
-        conn.execute(
-            "INSERT INTO tool_calls (session_id, tool_name, file_path, ts) VALUES (?, ?, ?, ?)",
-            (session_id, tool_name, file_path, time.time()),
-        )
-        conn.commit()
-        conn.close()
+        try:
+            init_db(conn)
+            conn.execute(
+                "INSERT INTO tool_calls (session_id, tool_name, file_path, ts) VALUES (?, ?, ?, ?)",
+                (session_id, tool_name, file_path, time.time()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
     except Exception:
         pass  # never fail the hook
 

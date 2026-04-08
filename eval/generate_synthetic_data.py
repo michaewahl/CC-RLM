@@ -1275,6 +1275,18 @@ def main() -> None:
 
     # ── write to watchdog.db ───────────────────────────────────────────────
     conn = sqlite3.connect(str(DB_PATH))
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS tool_calls (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            tool_name  TEXT NOT NULL,
+            file_path  TEXT,
+            ts         REAL NOT NULL
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_session ON tool_calls(session_id)")
+    conn.commit()
     if args.clear:
         conn.execute("DELETE FROM tool_calls WHERE session_id LIKE 'syn-%'")
         print("Cleared existing synthetic tool_calls rows.")

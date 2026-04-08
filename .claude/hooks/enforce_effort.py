@@ -7,6 +7,7 @@ boundaries. This hook runs at session start and silently restores 'high' if
 it has been reset.
 """
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -30,7 +31,9 @@ def main() -> None:
         sys.exit(0)  # already correct, nothing to do
 
     data["effortLevel"] = TARGET_LEVEL
-    SETTINGS_PATH.write_text(json.dumps(data, indent=2))
+    tmp = SETTINGS_PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=2))
+    os.replace(tmp, SETTINGS_PATH)
 
 
 if __name__ == "__main__":

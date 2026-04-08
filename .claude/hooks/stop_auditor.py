@@ -34,21 +34,23 @@ def read_effort_level() -> str:
 def get_session_counts(session_id: str) -> tuple[int, int]:
     try:
         conn = sqlite3.connect(str(DB_PATH), timeout=1.0)
-        conn.execute("PRAGMA journal_mode=WAL")
-        cur = conn.execute(
-            """
-            SELECT
-                SUM(CASE WHEN tool_name IN ('Read','Glob','Grep') THEN 1 ELSE 0 END),
-                SUM(CASE WHEN tool_name IN ('Write','Edit','MultiEdit') THEN 1 ELSE 0 END)
-            FROM tool_calls
-            WHERE session_id = ?
-            """,
-            (session_id,),
-        )
-        row = cur.fetchone()
-        conn.close()
-        if row:
-            return (int(row[0] or 0), int(row[1] or 0))
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            cur = conn.execute(
+                """
+                SELECT
+                    SUM(CASE WHEN tool_name IN ('Read','Glob','Grep') THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN tool_name IN ('Write','Edit','MultiEdit') THEN 1 ELSE 0 END)
+                FROM tool_calls
+                WHERE session_id = ?
+                """,
+                (session_id,),
+            )
+            row = cur.fetchone()
+            if row:
+                return (int(row[0] or 0), int(row[1] or 0))
+        finally:
+            conn.close()
     except Exception:
         pass
     return (0, 0)
