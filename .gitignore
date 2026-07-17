@@ -14,3 +14,6 @@ eval/watchdog.db-shm
 eval/watchdog.db-wal
 eval/dashboard.jsonl
 eval/*.png
+# benchmark working data
+bench/clones/
+bench/full_run.log

@@ -1,0 +1,36 @@
+{
+  "_comment": "CC-RLM multi-repo benchmark set. tier is an expectation only; actual size is measured at runtime. lang drives which source extensions count for the naive baseline and which import walker RLM uses.",
+  "repos": [
+    { "name": "pallets/click",         "url": "https://github.com/pallets/click",              "lang": "python", "tier": "small" },
+    { "name": "python-attrs/attrs",    "url": "https://github.com/python-attrs/attrs",         "lang": "python", "tier": "small" },
+    { "name": "hynek/structlog",       "url": "https://github.com/hynek/structlog",            "lang": "python", "tier": "small" },
+    { "name": "tiangolo/typer",        "url": "https://github.com/tiangolo/typer",             "lang": "python", "tier": "small" },
+    { "name": "agronholm/anyio",       "url": "https://github.com/agronholm/anyio",            "lang": "python", "tier": "small" },
+    { "name": "psf/requests",          "url": "https://github.com/psf/requests",               "lang": "python", "tier": "medium" },
+    { "name": "pallets/flask",         "url": "https://github.com/pallets/flask",              "lang": "python", "tier": "medium" },
+    { "name": "encode/httpx",          "url": "https://github.com/encode/httpx",               "lang": "python", "tier": "medium" },
+    { "name": "pallets/werkzeug",      "url": "https://github.com/pallets/werkzeug",           "lang": "python", "tier": "medium" },
+    { "name": "sqlalchemy/alembic",    "url": "https://github.com/sqlalchemy/alembic",         "lang": "python", "tier": "medium" },
+    { "name": "psf/black",             "url": "https://github.com/psf/black",                  "lang": "python", "tier": "large" },
+    { "name": "scrapy/scrapy",         "url": "https://github.com/scrapy/scrapy",              "lang": "python", "tier": "large" },
+    { "name": "celery/celery",         "url": "https://github.com/celery/celery",              "lang": "python", "tier": "large" },
+    { "name": "encode/django-rest-framework", "url": "https://github.com/encode/django-rest-framework", "lang": "python", "tier": "large" },
+    { "name": "pydantic/pydantic",     "url": "https://github.com/pydantic/pydantic",          "lang": "python", "tier": "large" },
+
+    { "name": "lukeed/clsx",           "url": "https://github.com/lukeed/clsx",                "lang": "ts", "tier": "small" },
+    { "name": "sindresorhus/ky",       "url": "https://github.com/sindresorhus/ky",            "lang": "ts", "tier": "small" },
+    { "name": "colinhacks/zod",        "url": "https://github.com/colinhacks/zod",             "lang": "ts", "tier": "small" },
+    { "name": "pmndrs/zustand",        "url": "https://github.com/pmndrs/zustand",             "lang": "ts", "tier": "small" },
+    { "name": "sindresorhus/got",      "url": "https://github.com/sindresorhus/got",           "lang": "ts", "tier": "small" },
+    { "name": "expressjs/express",     "url": "https://github.com/expressjs/express",          "lang": "ts", "tier": "medium" },
+    { "name": "axios/axios",           "url": "https://github.com/axios/axios",                "lang": "ts", "tier": "medium" },
+    { "name": "honojs/hono",           "url": "https://github.com/honojs/hono",                "lang": "ts", "tier": "medium" },
+    { "name": "vuejs/pinia",           "url": "https://github.com/vuejs/pinia",                "lang": "ts", "tier": "medium" },
+    { "name": "remix-run/react-router","url": "https://github.com/remix-run/react-router",     "lang": "ts", "tier": "medium" },
+    { "name": "nestjs/nest",           "url": "https://github.com/nestjs/nest",                "lang": "ts", "tier": "large" },
+    { "name": "vuejs/core",            "url": "https://github.com/vuejs/core",                 "lang": "ts", "tier": "large" },
+    { "name": "vitejs/vite",           "url": "https://github.com/vitejs/vite",                "lang": "ts", "tier": "large" },
+    { "name": "prisma/prisma",         "url": "https://github.com/prisma/prisma",              "lang": "ts", "tier": "large" },
+    { "name": "TanStack/query",        "url": "https://github.com/TanStack/query",             "lang": "ts", "tier": "large" }
+  ]
+}
