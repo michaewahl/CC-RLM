@@ -21,6 +21,13 @@ pytest = "^8"
 pytest-asyncio = "^0.23"
 ruff = "^0.4"
 
+[tool.pytest.ini_options]
+# package-mode = false means ccr/ and rlm/ are never installed into the venv,
+# so the `pytest` console script can't import them (only `python -m pytest`
+# puts CWD on sys.path). This makes `poetry run pytest` work either way.
+pythonpath = ["."]
+testpaths = ["tests"]
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

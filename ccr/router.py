@@ -14,12 +14,15 @@ Classification priority:
   5. No repo context                  → FALLBACK
 """
 
+import hashlib
 import json
 import logging
 from enum import Enum
 from pathlib import Path
 
 from fastapi import Request
+
+from ccr.config import settings
 
 log = logging.getLogger("ccr.router")
 
@@ -99,12 +102,87 @@ def get_route_hint(request: Request) -> str:
     return ""
 
 
-def classify(request: Request) -> Route:
+# Tools only the top-level agent is given. Subagents cannot spawn further
+# subagents, so a chat request advertising tools but none of these is a subagent
+# turn. This has to come from the body: the UserPromptSubmit hook fires only for
+# real user prompts, so the state file is written once per turn and every
+# subagent in that turn would otherwise read the main agent's routing.
+_MAIN_AGENT_ONLY_TOOLS = frozenset({"Task", "Agent"})
+
+
+def _tool_names(body: dict) -> set[str]:
+    names = set()
+    for tool in body.get("tools") or []:
+        if not isinstance(tool, dict):
+            continue
+        name = tool.get("name") or tool.get("function", {}).get("name")
+        if name:
+            names.add(name)
+    return names
+
+
+def _text_of(content) -> str:
+    """Flatten a string-or-content-block-list into plain text."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return " ".join(
+            b.get("text", "") for b in content
+            if isinstance(b, dict) and b.get("text")
+        )
+    return ""
+
+
+def is_subagent(body: dict | None) -> bool:
+    """
+    True when this chat request comes from a subagent rather than the main agent.
+
+    Heuristic, not a guarantee — Claude Code exposes no explicit agent id in the
+    request. A request that advertises no tools at all is treated as the main
+    agent, keeping the pre-existing behaviour as the default.
+    """
+    if not body:
+        return False
+    names = _tool_names(body)
+    if not names:
+        return False
+    return not (names & _MAIN_AGENT_ONLY_TOOLS)
+
+
+def agent_key(body: dict | None) -> str:
+    """
+    Stable per-context-window identity, used to partition RLM session dedup.
+
+    Main agent → "" (preserves existing session behaviour).
+    Subagent   → hash of (system prompt + first user message). The system prompt
+                 alone collides across two parallel instances of the same agent
+                 type; the first user message separates them by task.
+    """
+    if not is_subagent(body):
+        return ""
+    system = _text_of(body.get("system", ""))
+    first_user = ""
+    for msg in body.get("messages", []):
+        if msg.get("role") == "user":
+            first_user = _text_of(msg.get("content", ""))
+            break
+    return hashlib.sha256(f"{system}\x00{first_user}".encode()).hexdigest()[:16]
+
+
+def classify(request: Request, body: dict | None = None) -> Route:
     path = request.url.path
 
     # Non-chat endpoints go straight through to vLLM
     if not path.endswith("/chat/completions"):
         return Route.PASSTHROUGH
+
+    # Subagent split: send high-volume subagent traffic somewhere cheaper while
+    # the main agent keeps its normal route. Checked before the state-file hint,
+    # which describes the user's prompt, not this subagent's task.
+    sub_route = settings.subagent_route
+    if sub_route and sub_route in _VALID_HINTS and is_subagent(body):
+        log.info("Subagent request → %s", sub_route)
+        return Route(sub_route)
 
     # Explicit route override (from hook or header)
     hint = get_route_hint(request)
@@ -144,6 +222,13 @@ def extract_task_text(body: dict, state: dict | None = None) -> str:
                 )
             else:
                 raw = ""
+
+            # Only the main agent inherits the hook's stripped prompt. The hook
+            # writes one prompt per user turn; applying it to a subagent would
+            # replace that subagent's own task with the user's, and RLM would
+            # then keyword-score the pack against the wrong text.
+            if is_subagent(body):
+                return raw
 
             # Use stripped prompt if the hook removed a prefix
             if state is None:

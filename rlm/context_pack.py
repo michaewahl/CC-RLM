@@ -90,6 +90,7 @@ def assemble(
     walker_results: dict,
     token_budget: int,
     relevant_files: list[tuple[str, float]] | None = None,
+    agent_key: str = "",
 ) -> ContextPack:
     """
     Build a ContextPack from raw walker results, respecting the token budget.
@@ -101,6 +102,9 @@ def assemble(
 
     relevant_files: pre-ranked list from RepoIndex (overrides import walker ranking
                     when provided). Format: [(abs_path, score), ...]
+    agent_key:      identity of the requesting context window ("" = main agent).
+                    Scopes session dedup so a subagent isn't denied files the
+                    main agent saw but it never did.
     """
     pack = ContextPack(task=task, active_file=active_file, repo_path=repo_path)
     budget = token_budget
@@ -183,7 +187,7 @@ def assemble(
 
         # Session deduplication: skip files Claude already has in context (unchanged)
         # Never dedup the active file — the user is staring at it right now
-        if filepath != active_file and settings.session_dedup_enabled and session_tracker.already_seen(repo_path, filepath):
+        if filepath != active_file and settings.session_dedup_enabled and session_tracker.already_seen(repo_path, filepath, agent_key):
             pack.deduped_files.append(filepath)
             continue
 
