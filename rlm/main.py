@@ -68,6 +68,9 @@ class ContextRequest(BaseModel):
     task: str = Field(max_length=4_000)
     active_file: str = ""
     repo_path: str = Field(max_length=1_000)
+    # Identity of the requesting context window. "" = main agent; a subagent
+    # sends its own key so session dedup doesn't hide files it never saw.
+    agent_key: str = Field(default="", max_length=64)
 
 
 class ContextResponse(BaseModel):
@@ -197,6 +200,7 @@ async def build_context(req: ContextRequest) -> ContextResponse:
         walker_results=walker_results,
         token_budget=settings.token_budget,
         relevant_files=pre_ranked,
+        agent_key=req.agent_key,
     )
 
     rendered = pack.render()

@@ -13,7 +13,7 @@ Thin proxy between Claude Code and the rest of the stack.
 | File | Role |
 |---|---|
 | `main.py` | FastAPI app, lifespan, catch-all route handler |
-| `router.py` | `classify()`, `get_repo_context()`, `get_route_hint()`, `extract_task_text()` |
+| `router.py` | `classify()`, `get_repo_context()`, `get_route_hint()`, `extract_task_text()`, `is_subagent()`, `agent_key()` |
 | `config.py` | Pydantic-settings, all config via env vars prefixed `CCR_` |
 
 ## How repo context reaches CCR (no headers needed)
@@ -34,10 +34,41 @@ Explicit headers (`x-cc-repo-path`, `x-cc-active-file`, `x-cc-route-hint`) take 
 Priority order:
 
 1. Non-chat path → PASSTHROUGH (health checks, embeddings)
-2. Explicit `x-cc-route-hint` header → that route
-3. `route_hint` in state file (set by hook) → that route
-4. Has repo context → REPO_TASK
-5. No repo context → FALLBACK
+2. Subagent request + `CCR_SUBAGENT_ROUTE` set → that route
+3. Explicit `x-cc-route-hint` header → that route
+4. `route_hint` in state file (set by hook) → that route
+5. Has repo context → REPO_TASK
+6. No repo context → FALLBACK
+
+`classify(request, body)` needs the parsed body — `main.py` reads the body
+*before* classifying, because the subagent check is a body signal.
+
+## Subagent routing split
+
+`CCR_SUBAGENT_ROUTE` keeps the main agent on frontier Claude while sending
+high-volume subagent fan-out somewhere cheaper. Empty (default) = no split.
+
+Detection is a heuristic: Claude Code exposes no agent id, but subagents cannot
+spawn subagents, so a chat request advertising tools but no `Task`/`Agent` tool
+is a subagent turn. A request with no tools at all is treated as the main agent
+— the ambiguous case keeps the pre-existing behaviour.
+
+This *must* be a body signal, not a state-file one. The `UserPromptSubmit` hook
+fires only for real user prompts, so one `route_hint` is written per user turn
+and every subagent in that turn would otherwise inherit the main agent's route.
+
+Two consequences elsewhere:
+
+- `extract_task_text()` ignores `prompt_stripped` for subagents. The hook's
+  prompt belongs to the user's turn; applying it to a subagent would replace
+  that subagent's own task and misdirect RLM's keyword scoring.
+- `agent_key()` — hash of (system prompt + first user message), `""` for the
+  main agent — is sent to RLM `/context` to partition session dedup per context
+  window. Without it a subagent is denied files it never saw. System prompt
+  alone would collide across parallel instances of the same agent type.
+
+Known limitation: `active_file` still comes from the user's `git diff`, so a
+subagent working on something unrelated gets seeded from the wrong file.
 
 ## Prompt-driven routing (inject_repo_context.py)
 

@@ -18,7 +18,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 
 from ccr.config import settings
-from ccr.router import Route, classify, extract_task_text, get_repo_context, _read_state
+from ccr.router import Route, agent_key, classify, extract_task_text, get_repo_context, _read_state
 from ccr.skill_pruner import prune_tools
 
 logging.basicConfig(level=logging.INFO)
@@ -44,10 +44,22 @@ async def shutdown():
         await _client.aclose()
 
 
+def _parse_body(body_bytes: bytes) -> dict | None:
+    """Parse a chat-completions body, or None if it isn't usable JSON."""
+    try:
+        parsed = json.loads(body_bytes)
+    except Exception:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 async def proxy(request: Request, path: str):
-    route = classify(request)
+    # Body must be read before classify() — the subagent split reads the tools
+    # array, which is the only in-band signal distinguishing a subagent turn.
     body_bytes = await request.body()
+    body = _parse_body(body_bytes) if path.endswith("/chat/completions") else None
+    route = classify(request, body)
 
     if route == Route.PASSTHROUGH:
         return await _forward(request, path, body_bytes, settings.vllm_url)
@@ -59,16 +71,20 @@ async def proxy(request: Request, path: str):
         return await _forward(request, path, body_bytes, settings.vllm_url)
 
     # REPO_TASK: enrich via RLM
-    body = json.loads(body_bytes)
+    if body is None:
+        log.warning("REPO_TASK with unparseable body — forwarding unenriched")
+        return await _forward(request, path, body_bytes, settings.vllm_url)
+
     state = _read_state()
     task = extract_task_text(body, state)
     repo_path, active_file = get_repo_context(request)
+    a_key = agent_key(body)
 
-    log.info("REPO_TASK  repo=%s  file=%s", repo_path, active_file)
+    log.info("REPO_TASK  repo=%s  file=%s  agent=%s", repo_path, active_file, a_key or "main")
     log.info("  task preview: %s", task[:120])
 
     start_time = time.monotonic()
-    enriched_body, files_in_pack, pack_tokens, naive_tokens, pruned_tools, original_tools = await _enrich(body, task, active_file, repo_path)
+    enriched_body, files_in_pack, pack_tokens, naive_tokens, pruned_tools, original_tools = await _enrich(body, task, active_file, repo_path, a_key)
     return await _stream_vllm(request, enriched_body, repo_path, files_in_pack, pack_tokens, naive_tokens, start_time, pruned_tools, original_tools)
 
 
@@ -98,7 +114,7 @@ def _count_naive_tokens(repo_path: str) -> int:
     return total
 
 
-async def _enrich(body: dict, task: str, active_file: str, repo_path: str) -> tuple[dict, list[str], int, int, int, int]:
+async def _enrich(body: dict, task: str, active_file: str, repo_path: str, a_key: str = "") -> tuple[dict, list[str], int, int, int, int]:
     """Call RLM Gateway to get context pack and inject it as system message.
     Returns (enriched_body, files_in_pack, pack_tokens, naive_tokens, pruned_tools, original_tools)."""
     files_in_pack: list[str] = []
@@ -107,7 +123,7 @@ async def _enrich(body: dict, task: str, active_file: str, repo_path: str) -> tu
     try:
         resp = await _client.post(
             f"{settings.rlm_url}/context",
-            json={"task": task, "active_file": active_file, "repo_path": repo_path},
+            json={"task": task, "active_file": active_file, "repo_path": repo_path, "agent_key": a_key},
             timeout=10.0,
         )
         resp.raise_for_status()
